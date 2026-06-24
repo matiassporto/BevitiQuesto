@@ -78,23 +78,24 @@ function Btn({ children, bg, color, full, onClick }) {
 }
 
 export default function App() {
-  const [phase,   setPhase]   = useState('setup')
-  const [names,   setNames]   = useState(['',''])
-  const [sips,    setSips]    = useState([0,0])
-  const [cur,     setCur]     = useState(0)
-  const [deck,    setDeck]    = useState([])
-  const [card,    setCard]    = useState(null)
-  const [showAns, setShowAns] = useState(false)
-  const [rules,   setRules]   = useState([])
-  const [turn,    setTurn]    = useState(1)
-  const [vis,     setVis]     = useState(false)
+  const [phase,    setPhase]    = useState('setup')
+  const [names,    setNames]    = useState(['',''])
+  const [sips,     setSips]     = useState([0,0])
+  const [shields,  setShields]  = useState([0,0])
+  const [cur,      setCur]      = useState(0)
+  const [deck,     setDeck]     = useState([])
+  const [card,     setCard]     = useState(null)
+  const [showAns,  setShowAns]  = useState(false)
+  const [rules,    setRules]    = useState([])
+  const [turn,     setTurn]     = useState(1)
+  const [vis,      setVis]      = useState(false)
 
   const oth = 1 - cur
 
   const start = () => {
     if (!names[0].trim() || !names[1].trim()) return
     setDeck(shuffle(CARDS))
-    setSips([0,0]); setCur(0); setTurn(1); setRules([])
+    setSips([0,0]); setShields([0,0]); setCur(0); setTurn(1); setRules([])
     setPhase('play')
   }
 
@@ -109,9 +110,14 @@ export default function App() {
   const drink = (pi, n = 1) =>
     setSips(p => p.map((s, i) => i === pi ? s + n : s))
 
-  const next = ({ addRule = false, clearRules = false } = {}) => {
+  const addShield = (pi) =>
+    setShields(s => s.map((v, i) => i === pi ? v + 1 : v))
+
+  const useShield = () =>
+    setShields(s => s.map((v, i) => i === cur ? v - 1 : v))
+
+  const next = ({ addRule = false } = {}) => {
     let nr = rules.map(r => ({ ...r, t: r.t - 1 })).filter(r => r.t > 0)
-    if (clearRules) nr = []
     if (addRule && card?.duration)
       nr = [...nr, { id: Date.now(), txt: card.shortRule || card.text.slice(0,48)+'…', t: card.duration }]
     setRules(nr); setCur(1-cur); setTurn(t => t+1); setCard(null); setPhase('play')
@@ -189,6 +195,11 @@ export default function App() {
               </div>
               <div style={{ fontSize: '15px', fontWeight: 600 }}>{names[i]}</div>
               <div style={{ fontSize: '24px', marginTop: '4px' }}>🍺 {sips[i]}</div>
+              {shields[i] > 0 && (
+                <div style={{ fontSize: '13px', marginTop: '2px', color: '#fbbf24' }}>
+                  {'🛡️'.repeat(shields[i])}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -236,6 +247,24 @@ export default function App() {
   /* ── CARD ── */
   if (phase === 'card' && card) {
     const c = TCFG[card.type]
+    const hasShield = shields[cur] > 0
+
+    const loseSelf = (n) => { drink(cur, n); next() }
+    const winOpp   = (n) => { drink(oth, n); next() }
+
+    const renderLose = (n, label, sub) => (
+      <>
+        <Btn bg='#7f1d1d' color='#fecaca' onClick={() => loseSelf(n)}>
+          {label}<br/><small style={{ opacity:.8 }}>{sub}</small>
+        </Btn>
+        {hasShield && (
+          <Btn bg='#3a2e08' color='#fde68a' onClick={() => { useShield(); winOpp(n) }}>
+            🛡️ Usa scudo!<br/><small style={{ opacity:.8 }}>Beve {names[oth]} ×{n}</small>
+          </Btn>
+        )}
+      </>
+    )
+
     return (
       <div style={page}>
         <div style={wrap}>
@@ -244,6 +273,7 @@ export default function App() {
               <div key={i} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '8px 12px', borderRadius: '12px', background: '#1a1a28', border: '1px solid #222' }}>
                 <span style={{ fontSize: '13px', color: '#666' }}>{names[i]}</span>
                 <span style={{ fontSize: '14px', fontWeight: 600 }}>🍺 {sips[i]}</span>
+                {shields[i] > 0 && <span style={{ fontSize: '13px', color: '#fbbf24' }}>🛡️{shields[i]}</span>}
               </div>
             ))}
           </div>
@@ -277,12 +307,10 @@ export default function App() {
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {card.type === 'DUELLO' && <>
-              <Btn bg='#14532d' color='#bbf7d0' onClick={() => { drink(oth,2); next() }}>
+              <Btn bg='#14532d' color='#bbf7d0' onClick={() => winOpp(2)}>
                 🏆 Ho vinto!<br/><small style={{ opacity:.8 }}>Beve {names[oth]} ×2</small>
               </Btn>
-              <Btn bg='#7f1d1d' color='#fecaca' onClick={() => { drink(cur,2); next() }}>
-                💀 Ho perso<br/><small style={{ opacity:.8 }}>Bevo io ×2</small>
-              </Btn>
+              {renderLose(2, '💀 Ho perso', 'Bevo io ×2')}
               <Btn bg='#1e293b' color='#94a3b8' full onClick={() => { drink(0,1); drink(1,1); next() }}>
                 🤝 Pareggio — 1 sorso a testa
               </Btn>
@@ -294,12 +322,10 @@ export default function App() {
               </div>
             )}
             {card.type === 'TRIVIA' && showAns && <>
-              <Btn bg='#14532d' color='#bbf7d0' onClick={() => { drink(oth,1); next() }}>
+              <Btn bg='#14532d' color='#bbf7d0' onClick={() => winOpp(1)}>
                 ✅ Giusto!<br/><small style={{ opacity:.8 }}>Beve {names[oth]}</small>
               </Btn>
-              <Btn bg='#7f1d1d' color='#fecaca' onClick={() => { drink(cur,1); next() }}>
-                ❌ Sbagliato<br/><small style={{ opacity:.8 }}>Bevo io</small>
-              </Btn>
+              {renderLose(1, '❌ Sbagliato', 'Bevo io')}
             </>}
 
             {card.type === 'REGOLA' && (
@@ -311,30 +337,27 @@ export default function App() {
             {card.type === 'JOLLY' && card.jollyType === 'SWAP' && (
               <Btn bg='#1c1004' color='#fde68a' full onClick={() => next()}>🔄 Scambiati! Avanti →</Btn>
             )}
-            {card.type === 'JOLLY' && card.jollyType === 'GRACE' && <>
-              <Btn bg='#1c1004' color='#fde68a' onClick={() => next({ clearRules:true })}>✨ Cancella regole!</Btn>
-              <Btn bg='#1e293b' color='#94a3b8' onClick={() => next()}>Salta turno</Btn>
-            </>}
+            {card.type === 'JOLLY' && card.jollyType === 'SHIELD' && (
+              <Btn bg='#1c1004' color='#fde68a' full onClick={() => { addShield(cur); next() }}>
+                🛡️ Scudo conservato! Avanti →
+              </Btn>
+            )}
             {card.type === 'JOLLY' && card.jollyType === 'DOUBLE' && <>
-              <Btn bg='#14532d' color='#bbf7d0' onClick={() => { drink(oth,2); next() }}>
+              <Btn bg='#14532d' color='#bbf7d0' onClick={() => winOpp(2)}>
                 🎲 Ho vinto!<br/><small style={{ opacity:.8 }}>Beve {names[oth]} ×2</small>
               </Btn>
-              <Btn bg='#7f1d1d' color='#fecaca' onClick={() => { drink(cur,2); next() }}>
-                😬 Ho perso<br/><small style={{ opacity:.8 }}>Bevo io ×2</small>
-              </Btn>
+              {renderLose(2, '😬 Ho perso', 'Bevo io ×2')}
             </>}
             {card.type === 'JOLLY' && card.jollyType === 'TOAST' && (
               <Btn bg='#1c1004' color='#fde68a' full onClick={() => { drink(0,1); drink(1,1); next() }}>
                 🥂 Cin cin! Bevete entrambi
               </Btn>
             )}
-            {card.type === 'JOLLY' && card.jollyType === 'TRUTH' && <>
-              <Btn bg='#7f1d1d' color='#fecaca' onClick={() => { drink(oth,2); next() }}>
-                🤥 Ha mentito!<br/><small style={{ opacity:.8 }}>Beve {names[oth]} ×2</small>
+            {card.type === 'JOLLY' && card.jollyType === 'ROULETTE' && <>
+              <Btn bg='#14532d' color='#bbf7d0' onClick={() => winOpp(2)}>
+                🎯 Coincidono!<br/><small style={{ opacity:.8 }}>Beve {names[oth]} ×2</small>
               </Btn>
-              <Btn bg='#14532d' color='#bbf7d0' onClick={() => next()}>
-                💚 Onesto/a!<br/><small style={{ opacity:.8 }}>Nessuno beve</small>
-              </Btn>
+              {renderLose(2, '🎯 Diverse', 'Bevo io ×2')}
             </>}
           </div>
         </div>
